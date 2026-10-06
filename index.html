@@ -3,12 +3,14 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>AR 햄버거집</title>
+<title>1인칭 AR 햄버거집</title>
 <style>
 body{margin:0;background:#111;color:#fff;font-family:system-ui,"Apple SD Gothic Neo","Noto Sans KR",sans-serif;display:flex;justify-content:center}
 #w{position:relative;width:100%;max-width:960px}
-canvas{width:100%;display:block;background:#222}
-video{display:none}
+canvas{width:100%;display:block}
+#v{position:absolute;left:8px;bottom:8px;width:22%;border-radius:8px;transform:scaleX(-1);display:none;border:2px solid #fff}
+#hud{position:absolute;left:12px;top:10px;font-size:20px;font-weight:700;text-shadow:0 1px 3px #000}
+#fb{position:absolute;left:0;right:0;top:18%;text-align:center;font-size:40px;font-weight:800;color:#ffd43b;text-shadow:0 2px 6px #000;pointer-events:none}
 #m{position:absolute;inset:0;background:rgba(0,0,0,.6);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;text-align:center;padding:20px}
 #m.off{display:none}
 button{background:#e8590c;color:#fff;border:0;border-radius:10px;padding:12px 18px;font-size:16px;font-weight:700;cursor:pointer}
@@ -19,24 +21,75 @@ button.alt{background:#555}
 <div id="w">
 <canvas id="c" width="960" height="720"></canvas>
 <video id="v" playsinline muted></video>
-<div id="m"><div id="t">🍔 AR 햄버거집<br>엄지와 검지를 모아(핀치) 재료를 집고,<br>접시 위에서 손가락을 펴서 놓으세요!</div>
+<div id="hud"></div><div id="fb"></div>
+<div id="m"><div id="t">🍔 1인칭 AR 햄버거집<br>손님 머리 위 주문서 순서대로 재료를 만들어요.<br>엄지+검지를 모아(핀치) 재료를 집고, 접시 위에서 펴서 놓으세요!</div>
 <button id="b1">📷 카메라 켜고 시작</button><button id="b2" class="alt">🖱 마우스로 해보기</button></div>
 </div>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script type="module">
 import {HandLandmarker,FilesetResolver} from "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/vision_bundle.mjs";
-const $=id=>document.getElementById(id),cv=$('c'),g=cv.getContext('2d'),v=$('v'),W=960,H=720;
-const ING=[{e:'🥩',n:'패티'},{e:'🧀',n:'치즈'},{e:'🥬',n:'양상추'},{e:'🍅',n:'토마토'},{e:'🍞',n:'윗빵'}];
-const IX=90,IY=i=>130+i*120,R=48,PX=560,PY=600;
-let lm=null,cam=false,run=false,over=false,score=0,time=60,order=[],step=0,held=-1,was=false,fb='',fbT=0,tmr=null,lastT=-1;
-let hands=[],mouse={x:0,y:0,pinch:false,on:false};
-function newOrder(){const n=2+Math.floor(Math.random()*3);order=[];for(let i=0;i<n;i++)order.push(Math.floor(Math.random()*4));order.push(4);step=0}
-function say(s){fb=s;fbT=performance.now()+800}
-function place(i){
- if(i===order[step]){step++;say('좋아요! 👍');if(step>=order.length){score+=10+order.length*2;time=Math.min(time+3,99);newOrder()}}
- else{time=Math.max(0,time-2);say('순서가 달라요! ❌')}
+const $=id=>document.getElementById(id),W=960,H=720,v=$('v');
+const E=['🥩','🧀','🥬','🍅','🍞'],N=['패티','치즈','양상추','토마토','윗빵'],HT=[.05,.015,.03,.04,.1];
+const ren=new THREE.WebGLRenderer({canvas:$('c'),antialias:true});ren.setSize(W,H,false);
+const scene=new THREE.Scene();scene.background=new THREE.Color(0xe8dcc8);
+const camr=new THREE.PerspectiveCamera(60,W/H,.1,50);camr.position.set(0,1.5,0);camr.lookAt(0,1.2,-2);camr.updateMatrixWorld();
+scene.add(new THREE.AmbientLight(0xffffff,.75));const dl=new THREE.DirectionalLight(0xffffff,.8);dl.position.set(1,3,1);scene.add(dl);
+const mat=c=>new THREE.MeshLambertMaterial({color:c});
+const put=(geo,c,x,y,z,p=scene)=>{const m=new THREE.Mesh(geo,mat(c));m.position.set(x,y,z);p.add(m);return m};
+const B=(w,h,d)=>new THREE.BoxGeometry(w,h,d),CY=(r,h,s=24)=>new THREE.CylinderGeometry(r,r,h,s);
+put(B(10,.12,1.4),0xb5651d,0,.84,-1.4);put(B(10,.8,1.4),0x8a4b14,0,.4,-1.4);
+put(B(10,4,.1),0xf1ebe0,0,2,-4);put(B(10,.1,8),0xcfc6b4,0,0,-2);
+const PLX=.7,Z=-1.4;
+put(CY(.24,.02),0xffffff,PLX,.91,Z);put(CY(.13,.06),0xd9953c,PLX,.95,Z);
+// 손님
+const cust=new THREE.Group();scene.add(cust);
+put(B(.9,.8,.4),0x4a6fa5,0,1.2,-2.7,cust);
+put(new THREE.SphereGeometry(.25,24,16),0xf2c29b,0,1.85,-2.7,cust);
+put(new THREE.SphereGeometry(.27,24,12,0,Math.PI*2,0,Math.PI/2),0x6b3a1e,0,1.9,-2.7,cust);
+put(new THREE.SphereGeometry(.03,8,8),0x000000,-.09,1.88,-2.47,cust);put(new THREE.SphereGeometry(.03,8,8),0x000000,.09,1.88,-2.47,cust);
+// 스프라이트
+function sprite(w,h,sx,sy,draw){const c=document.createElement('canvas');c.width=w;c.height=h;const t=new THREE.CanvasTexture(c);
+ const s=new THREE.Sprite(new THREE.SpriteMaterial({map:t,transparent:true,depthTest:false}));s.scale.set(sx,sy,1);
+ s.redraw=()=>{const x=c.getContext('2d');x.clearRect(0,0,w,h);draw(x);t.needsUpdate=true};s.redraw();scene.add(s);return s}
+// 재료 선반
+const tpl=[CY(.11,.05),B(.2,.015,.2),CY(.13,.03,12),CY(.1,.04),new THREE.SphereGeometry(.12,16,10,0,Math.PI*2,0,Math.PI/2)]
+ .map((g,i)=>{const m=put(g,[0x6b3a1e,0xffc928,0x5fbf3a,0xe03131,0xd9953c][i],-.8+i*.26,.93+HT[i]/2,Z);if(i===4)m.position.y=.93;
+  const l=sprite(128,40,.3,.095,x=>{x.fillStyle='#fff';x.font='bold 26px sans-serif';x.textAlign='center';x.strokeStyle='#000';x.lineWidth=5;x.strokeText(N[i],64,30);x.fillText(N[i],64,30)});
+  l.position.set(m.position.x,1.1,Z);return m});
+// 주문서
+let order=[],step=0;
+const bubble=sprite(512,160,1.8,.56,x=>{x.fillStyle='#fff';x.beginPath();x.roundRect(4,4,504,152,24);x.fill();x.fillStyle='#e8590c';x.font='bold 22px sans-serif';x.fillText('ORDER : HAMBURGER',20,34);
+ x.font='54px serif';const a=[4,...order];a.forEach((o,k)=>{x.globalAlpha=(k>0&&k<=step)?.3:1;x.fillText(E[o],20+k*74,112)});x.globalAlpha=1});
+bubble.position.set(0,2.45,-2.5);
+// 손
+const HC=[0,1,1,2,2,3,3,4,0,5,5,6,6,7,7,8,5,9,9,10,10,11,11,12,9,13,13,14,14,15,15,16,13,17,17,18,18,19,19,20,0,17];
+const hm=new THREE.MeshBasicMaterial({color:0xffd2b0,depthTest:false});
+const hobj=[0,1].map(()=>{const g=new THREE.Group(),sp=[];for(let i=0;i<21;i++){const s=new THREE.Mesh(new THREE.SphereGeometry(.014,8,8),hm);s.renderOrder=10;g.add(s);sp.push(s)}
+ const geo=new THREE.BufferGeometry();geo.setAttribute('position',new THREE.BufferAttribute(new Float32Array(HC.length*3),3));
+ const ln=new THREE.LineSegments(geo,new THREE.LineBasicMaterial({color:0xff7a2f,depthTest:false}));ln.frustumCulled=false;ln.renderOrder=10;g.add(ln);
+ const pm=new THREE.MeshBasicMaterial({color:0xffffff,depthTest:false,transparent:true,opacity:.7});const pk=new THREE.Mesh(new THREE.SphereGeometry(.03,12,12),pm);pk.renderOrder=11;g.add(pk);
+ g.visible=false;scene.add(g);return {g,sp,ln,pk,pm}});
+const mk=new THREE.Mesh(new THREE.SphereGeometry(.03,12,12),new THREE.MeshBasicMaterial({color:0xffffff,depthTest:false}));mk.renderOrder=11;mk.visible=false;scene.add(mk);
+const rc=new THREE.Vector3();
+function toW(nx,ny){rc.set(nx*2-1,-(ny*2-1),.5).unproject(camr);const d=rc.sub(camr.position).normalize();return camr.position.clone().add(d.multiplyScalar((Z-camr.position.z)/d.z))}
+// 게임
+let lm=null,cam=false,run=false,busy=false,score=0,time=60,held=null,was=false,fbT=0,tmr=null,lastT=-1,hands=[],stack=[],stackY=.98,best=0;
+const mouse={x:0,y:0,pinch:false,on:false};
+try{best=+localStorage.getItem('burger3dBest')||0}catch(e){}
+function newOrder(){const n=2+Math.floor(Math.random()*3);order=[];for(let i=0;i<n;i++)order.push(Math.floor(Math.random()*4));order.push(4);step=0;bubble.redraw()}
+function say(s){$('fb').textContent=s;clearTimeout(fbT);fbT=setTimeout(()=>$('fb').textContent='',900)}
+function hud(){$('hud').textContent='점수 '+score+'   ⏱ '+time+'   최고 '+best}
+function place(h){
+ if(busy)return scene.remove(h.m);
+ if(h.i===order[step]){h.m.position.set(PLX,h.i===4?stackY:stackY+HT[h.i]/2,Z);stack.push(h.m);stackY+=HT[h.i];step++;bubble.redraw();say('좋아요! 👍');
+  if(step>=order.length){busy=true;score+=10+order.length*2;time=Math.min(time+3,99);hud();say('완성! 🎉');
+   setTimeout(()=>{stack.forEach(m=>scene.remove(m));stack=[];stackY=.98;newOrder();busy=false},800)}}
+ else{scene.remove(h.m);time=Math.max(0,time-2);hud();say('순서가 달라요! ❌')}
 }
-function start(){score=0;time=60;run=true;over=false;held=-1;newOrder();$('m').classList.add('off');clearInterval(tmr);
- tmr=setInterval(()=>{if(--time<=0){time=0;run=false;clearInterval(tmr);$('t').innerHTML='게임 끝! 🍔<br>점수: <b>'+score+'</b>';$('b2').style.display='none';$('b1').textContent='🔁 다시 하기';$('m').classList.remove('off')}},1000)}
+function start(){score=0;time=60;run=true;busy=false;stack.forEach(m=>scene.remove(m));stack=[];stackY=.98;held=null;newOrder();hud();$('m').classList.add('off');clearInterval(tmr);
+ tmr=setInterval(()=>{time--;hud();if(time<=0){time=0;run=false;clearInterval(tmr);
+  if(score>best){best=score;try{localStorage.setItem('burger3dBest',best)}catch(e){}}
+  $('t').innerHTML='게임 끝! 🍔<br>점수: <b>'+score+'</b> (최고 '+best+')';$('b2').style.display='none';$('b1').textContent='🔁 다시 하기';$('m').classList.remove('off')}},1000)}
 $('b2').onclick=()=>{cam=false;mouse.on=true;start()};
 $('b1').onclick=async()=>{
  if($('b2').style.display==='none'){start();return}
@@ -45,66 +98,39 @@ $('b1').onclick=async()=>{
   const fs=await FilesetResolver.forVisionTasks("https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.14/wasm");
   lm=await HandLandmarker.createFromOptions(fs,{baseOptions:{modelAssetPath:"https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task"},runningMode:"VIDEO",numHands:2});
   v.srcObject=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:640,height:480},audio:false});
-  await v.play();cam=true;start();
+  await v.play();v.style.display='block';cam=true;start();
  }catch(e){$('t').innerHTML='카메라/손 인식을 시작하지 못했어요 😢<br>'+e.message}
 };
-cv.addEventListener('pointermove',e=>{const r=cv.getBoundingClientRect();mouse.x=(e.clientX-r.left)/r.width*W;mouse.y=(e.clientY-r.top)/r.height*H});
-cv.addEventListener('pointerdown',()=>mouse.pinch=true);
-addEventListener('pointerup',()=>mouse.pinch=false);
-const d=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
+const cv=$('c');
+cv.addEventListener('pointermove',e=>{const r=cv.getBoundingClientRect();mouse.x=(e.clientX-r.left)/r.width;mouse.y=(e.clientY-r.top)/r.height});
+cv.addEventListener('pointerdown',()=>mouse.pinch=true);addEventListener('pointerup',()=>mouse.pinch=false);
+const dist=(a,b)=>Math.hypot(a.x-b.x,a.y-b.y);
 function track(){
  if(!(cam&&lm&&v.readyState>=2&&v.currentTime!==lastT))return;
  lastT=v.currentTime;
- const r=lm.detectForVideo(v,performance.now());
- hands=r.landmarks.map(l=>{
-  const pts=l.map(p=>({x:(1-p.x)*W,y:p.y*H}));
-  const mid={x:(pts[4].x+pts[8].x)/2,y:(pts[4].y+pts[8].y)/2};
-  return {pts,x:mid.x,y:mid.y,pinch:d(pts[4],pts[8])/d(pts[0],pts[9])<0.4};
- });
+ hands=lm.detectForVideo(v,performance.now()).landmarks.map(l=>({l,pinch:dist(l[4],l[8])/dist(l[0],l[9])<.4}));
 }
 function pointer(){
- if(cam&&hands.length)return hands.find(h=>h.pinch)||hands[0];
- if(mouse.on)return mouse;
- return null;
+ let p=null;
+ hobj.forEach((o,i)=>{const h=hands[i];o.g.visible=!!h;if(!h)return;
+  const pos=o.ln.geometry.attributes.position;
+  h.l.forEach((q,k)=>o.sp[k].position.copy(toW(1-q.x,q.y)));
+  HC.forEach((k,j)=>{const s=o.sp[k].position;pos.setXYZ(j,s.x,s.y,s.z)});pos.needsUpdate=true;
+  const pt=toW(1-(h.l[4].x+h.l[8].x)/2,(h.l[4].y+h.l[8].y)/2);o.pk.position.copy(pt);o.pm.color.set(h.pinch?0x51cf66:0xffffff);
+  h.pt=pt;});
+ if(cam&&hands.length){const h=hands.find(h=>h.pinch)||hands[0];p={x:h.pt.x,y:h.pt.y,pinch:h.pinch}}
+ else if(mouse.on){const pt=toW(mouse.x,mouse.y);mk.visible=true;mk.position.copy(pt);mk.material.color.set(mouse.pinch?0x51cf66:0xffffff);p={x:pt.x,y:pt.y,pinch:mouse.pinch}}
+ return p;
 }
 function logic(p){
- if(!run||!p){if(held>=0&&run){held=-1}was=false;return}
- if(p.pinch&&!was&&held<0){for(let i=0;i<5;i++)if(Math.hypot(p.x-IX,p.y-IY(i))<R+25){held=i;break}}
- if(!p.pinch&&held>=0){if(p.x>PX-180&&p.x<PX+180&&p.y>380)place(held);held=-1}
+ if(!run||!p){if(held){scene.remove(held.m);held=null}was=false;return}
+ if(p.pinch&&!was&&!held)tpl.forEach((t,i)=>{if(!held&&Math.hypot(p.x-t.position.x,p.y-t.position.y)<.17){held={i,m:t.clone()};scene.add(held.m)}});
+ if(held)held.m.position.set(p.x,p.y,Z);
+ if(!p.pinch&&held){if(Math.abs(p.x-PLX)<.35&&p.y<1.4)place(held);else scene.remove(held.m);held=null}
  was=p.pinch;
 }
-function draw(p){
- g.clearRect(0,0,W,H);
- if(cam){g.save();g.scale(-1,1);g.drawImage(v,-W,0,W,H);g.restore();g.fillStyle='rgba(0,0,0,.25)';g.fillRect(0,0,W,H)}
- else{g.fillStyle='#3b2a1c';g.fillRect(0,0,W,H)}
- g.textAlign='center';g.textBaseline='middle';
- for(let i=0;i<5;i++){
-  g.fillStyle=held===i?'rgba(255,200,60,.8)':'rgba(255,255,255,.75)';
-  g.beginPath();g.arc(IX,IY(i),R,0,7);g.fill();
-  g.font='46px serif';g.fillStyle='#000';g.fillText(ING[i].e,IX,IY(i)+2);
-  g.font='14px sans-serif';g.fillStyle='#fff';g.fillText(ING[i].n,IX+R+34,IY(i));
- }
- g.fillStyle='rgba(255,255,255,.8)';g.beginPath();g.ellipse(PX,PY+30,170,28,0,0,7);g.fill();
- const mine=[4,...order.slice(0,step)].reverse();
- g.font='56px serif';
- mine.reverse().forEach((o,k)=>g.fillText(k===0?'🍞':ING[o].e,PX,PY-k*34));
- g.fillStyle='rgba(0,0,0,.6)';g.fillRect(W-210,20,190,60+order.length*44);
- g.fillStyle='#fff';g.font='bold 16px sans-serif';g.fillText('주문서 (아래→위)',W-115,42);
- g.font='34px serif';
- order.forEach((o,k)=>{g.globalAlpha=k<step?.3:1;g.fillText(ING[o].e,W-115,80+k*44)});
- g.globalAlpha=1;
- g.font='bold 24px sans-serif';g.textAlign='left';g.fillStyle='#fff';
- g.fillText('점수 '+score+'   ⏱ '+time,20,36);
- g.textAlign='center';
- if(performance.now()<fbT){g.font='bold 44px sans-serif';g.fillStyle='#ffd43b';g.fillText(fb,W/2,90)}
- if(cam)for(const h of hands){g.fillStyle='rgba(255,255,255,.8)';h.pts.forEach(q=>{g.beginPath();g.arc(q.x,q.y,4,0,7);g.fill()})}
- if(p){
-  g.strokeStyle=p.pinch?'#51cf66':'#fff';g.lineWidth=5;g.beginPath();g.arc(p.x,p.y,p.pinch?16:28,0,7);g.stroke();
-  if(held>=0){g.font='60px serif';g.fillText(ING[held].e,p.x,p.y)}
- }
-}
-function loop(){requestAnimationFrame(loop);track();const p=pointer();logic(p);draw(p)}
-loop();
+function loop(t){requestAnimationFrame(loop);track();logic(pointer());cust.position.y=Math.sin(t/400)*.012;ren.render(scene,camr)}
+loop(0);
 </script>
 </body>
 </html>
